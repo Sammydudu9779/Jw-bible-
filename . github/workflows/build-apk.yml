@@ -3,7 +3,7 @@ name: Build JW Bible APK
 
 on:
   workflow_dispatch:
-
+  push:
 permissions:
   contents: read
 
