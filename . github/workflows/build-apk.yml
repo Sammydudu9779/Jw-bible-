@@ -4,14 +4,18 @@ name: Build JW Bible APK
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+
 permissions:
   contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java
@@ -21,34 +25,42 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android platform
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: android-actions/setup-android@v4
         with:
-          gradle-version: '8.9'
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Extract project
+      - name: Extract Android project
+        shell: bash
         run: |
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)
-          test -n "$ZIP_FILE"
-          mkdir source
-          unzip -q "$ZIP_FILE" -d source
-          SETTINGS=$(find source -name settings.gradle -type f -print -quit)
-          test -n "$SETTINGS"
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          mkdir -p android-project
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname '*.zip' | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERRORE: non trovo il file ZIP del progetto Android nella cartella principale."
+            exit 1
+          fi
+          unzip -q "$ZIP_FILE" -d android-project
+
+      - name: Find Gradle project
+        shell: bash
+        run: |
+          GRADLE_FILE=$(find android-project -type f -name gradlew | head -n 1)
+          if [ -z "$GRADLE_FILE" ]; then
+            echo "ERRORE: non trovo gradlew nel progetto."
+            find android-project -maxdepth 4 -type f
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$GRADLE_FILE")" >> "$GITHUB_ENV"
 
       - name: Build APK
+        shell: bash
         run: |
-          gradle -p "$PROJECT_DIR" --no-daemon assembleDebug
-          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" JW-Bible.apk
+          cd "$PROJECT_DIR"
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: JW-Bible-APK
-          path: JW-Bible.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
